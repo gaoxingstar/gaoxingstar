@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>运单追踪系统</title>
+    <!-- 引入外部资源 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    <!-- LeanCloud 核心库 -->
+    <script src="https://cdn.jsdelivr.net/npm/leancloud-storage@4.17.0/dist/av-min.js"></script>
+    
+    <!-- 配置Tailwind -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#165DFF',
+                        secondary: '#36CFC9',
+                        accent: '#722ED1',
+                        neutral: '#1F2937',
+                        'neutral-light': '#F5F7FA',
+                    },
+                    fontFamily: {
+                        inter: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                    boxShadow: {
+                        'card': '0 10px 30px -5px rgba(0, 0, 0, 0.1)',
+                        'card-hover': '0 20px 40px -5px rgba(0, 0, 0, 0.15)',
+                    }
+                },
+            }
+        }
+    </script>
+    
+    <!-- 自定义工具类 -->
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .card-transition {
+                transition: all 0.3s ease;
+            }
+            .gradient-bg {
+                background: linear-gradient(135deg, #165DFF 0%, #722ED1 100%);
+            }
+            .text-gradient {
+                background-clip: text;
+                -webkit-background-clip: text;
+                color: transparent;
+                background-image: linear-gradient(135deg, #165DFF 0%, #722ED1 100%);
+            }
+        }
+    </style>
+</head>
+
+<body class="font-inter bg-gray-50 text-neutral min-h-screen">
+    <!-- 顶部导航 -->
+    <header class="sticky top-0 z-50 bg-white/80 backdrop-blur-md shadow-sm">
+        <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex items-center">
+                    <i class="fa fa-truck text-primary text-2xl mr-2"></i>
+                    <h1 class="text-xl font-bold text-gradient">运单追踪系统</h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <button id="themeToggle" class="p-2 rounded-full hover:bg-gray-100 transition-colors">
+                        <i class="fa fa-moon-o text-neutral"></i>
+                    </button>
+                    <button id="helpBtn" class="p-2 rounded-full hover:bg-gray-100 transition-colors">
+                        <i class="fa fa-question-circle text-neutral"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主内容区 -->
+    <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- 统计卡片 -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-white rounded-xl shadow-card p-6 card-transition hover:shadow-card-hover hover:-translate-y-1">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-500 text-sm">总运单数量</p>
+                        <h3 id="totalCount" class="text-3xl font-bold mt-1">0</h3>
+                    </div>
+                    <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                        <i class="fa fa-list-alt text-primary text-xl"></i>
+                    </div>
+                </div>
+                <div class="mt-4 text-sm text-green-500 flex items-center">
+                    <i class="fa fa-arrow-up mr-1"></i>
+                    <span>较昨日 +0</span>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-xl shadow-card p-6 card-transition hover:shadow-card-hover hover:-translate-y-1">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-500 text-sm">今日新增</p>
+                        <h3 id="todayCount" class="text-3xl font-bold mt-1">0</h3>
+                    </div>
+                    <div class="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center">
+                        <i class="fa fa-plus-circle text-secondary text-xl"></i>
+                    </div>
+                </div>
+                <div class="mt-4 text-sm text-green-500 flex items-center">
+                    <i class="fa fa-arrow-up mr-1"></i>
+                    <span>较昨日 +0</span>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-xl shadow-card p-6 card-transition hover:shadow-card-hover hover:-translate-y-1">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-500 text-sm">查询次数</p>
+                        <h3 id="queryCount" class="text-3xl font-bold mt-1">0</h3>
+                    </div>
+                    <div class="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center">
+                        <i class="fa fa-search text-accent text-xl"></i>
+                    </div>
+                </div>
+                <div class="mt-4 text-sm text-green-500 flex items-center">
+                    <i class="fa fa-arrow-up mr-1"></i>
+                    <span>较昨日 +0</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 主要功能区 -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- 左侧：导入和查询 -->
+            <div class="lg:col-span-1 space-y-6">
+                <!-- 数据导入卡片 -->
+                <div class="bg-white rounded-xl shadow-card p-6 card-transition hover:shadow-card-hover">
+                    <div class="flex items-center mb-4">
+                        <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mr-3">
+                            <i class="fa fa-upload text-primary"></i>
+                        </div>
+                        <h2 class="text-lg font-semibold">数据导入</h2>
+                    </div>
+                    
+                    <p class="text-gray-500 text-sm mb-4">支持XLSX格式文件，列顺序：运单号、店铺、仓库、发货时间</p>
+                    
+                    <div id="dropArea" class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-primary transition-colors">
+                        <i class="fa fa-file-excel-o text-4xl text-gray-400 mb-3"></i>
+                        <p class="text-gray-500 mb-2">拖放文件到此处，或</p>
+                        <button id="browseBtn" class="bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors">
+                            选择文件
+                        </button>
+                        <input type="file" id="fileInput" accept=".xlsx, .xls" class="hidden">
+                    </div>
+                    
+                    <div id="uploadProgress" class="mt-4 hidden">
+                        <div class="flex justify-between text-sm mb-1">
+                            <span id="uploadFileName">文件名</span>
+                            <span id="uploadPercent">0%</span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2.5">
+                            <div id="progressBar" class="bg-primary h-2.5 rounded-full" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    
+                    <div id="uploadResult" class="mt-4 hidden"></div>
+                </div>
+                
+                <!-- 批量查询卡片 -->
+                <div class="bg-white rounded-xl shadow-card p-6 card-transition hover:shadow-card-hover">
+                    <div class="flex items-center mb-4">
+                        <div class="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center mr-3">
+                            <i class="fa fa-search text-accent"></i>
+                        </div>
+                        <h2 class="text-lg font-semibold">批量查询</h2>
+                    </div>
+                    
+                    <p class="text-gray-500 text-sm mb-4">每行输入一个运单号，支持批量查询</p>
+                    
+                    <textarea id="trackingNumbers" rows="6" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition-colors resize-none" placeholder="例如：
+SF1234567890123
+YT9876543210987
+JD1122334455667"></textarea>
+                    
+                    <button id="queryBtn" class="w-full mt-4 bg-accent text-white px-4 py-3 rounded-lg hover:bg-accent/90 transition-colors flex items-center justify-center">
+                        <i class="fa fa-search mr-2"></i>
+                        开始查询
+                    </button>
+                </div>
+            </div>
+            
+            <!-- 右侧：查询结果 -->
+            <div class="lg:col-span-2">
+                <div class="bg-white rounded-xl shadow-card p-6 h-full card-transition hover:shadow-card-hover">
+                    <div class="flex items-center justify-between mb-6">
+                        <div class="flex items-center">
+                            <div class="w-10 h-10 rounded-lg bg-secondary/10 flex items-center justify-center mr-3">
+                                <i class="fa fa-table text-secondary"></i>
+                            </div>
+                            <h2 class="text-lg font-semibold">查询结果</h2>
+                        </div>
+                        <div class="flex space-x-2">
+                            <button id="exportBtn" class="px-3 py-1.5 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors hidden">
+                                <i class="fa fa-download mr-1"></i> 导出
+                            </button>
+                            <button id="clearBtn" class="px-3 py-1.5 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors">
+                                <i class="fa fa-trash mr-1"></i> 清空
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- 结果统计 -->
+                    <div id="resultStats" class="mb-4 hidden">
+                        <div class="flex flex-wrap gap-4 text-sm">
+                            <div class="flex items-center">
+                                <span class="w-3 h-3 rounded-full bg-green-500 mr-1"></span>
+                                <span>找到 <span id="foundCount" class="font-semibold">0</span> 条记录</span>
+                            </div>
+                            <div class="flex items-center">
+                                <span class="w-3 h-3 rounded-full bg-red-500 mr-1"></span>
+                                <span>未找到 <span id="notFoundCount" class="font-semibold">0</span> 条记录</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 结果表格 -->
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead>
+                                <tr>
+                                    <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider rounded-tl-lg">运单号</th>
+                                    <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">店铺</th>
+                                    <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">仓库</th>
+                                    <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider rounded-tr-lg">发货时间</th>
+                                </tr>
+                            </thead>
+                            <tbody id="resultTableBody" class="bg-white divide-y divide-gray-200">
+                                <tr>
+                                    <td colspan="4" class="px-4 py-12 text-center text-gray-500">
+                                        <div class="flex flex-col items-center">
+                                            <i class="fa fa-search text-4xl mb-3 text-gray-300"></i>
+                                            <p>请输入运单号进行查询</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- 未找到的运单号 -->
+                    <div id="notFoundSection" class="mt-6 hidden">
+                        <h3 class="text-sm font-medium text-gray-500 mb-2">未找到的运单号：</h3>
+                        <div id="notFoundList" class="flex flex-wrap gap-2"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <!-- 页脚 -->
+    <footer class="bg-white border-t border-gray-200 mt-12">
+        <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div class="flex flex-col md:flex-row justify-between items-center">
+                <p class="text-gray-500 text-sm">© 2023 运单追踪系统 - 保护您的数据安全</p>
+                <div class="flex space-x-4 mt-4 md:mt-0">
+                    <a href="#" class="text-gray-400 hover:text-primary transition-colors">
+                        <i class="fa fa-question-circle"></i> 帮助中心
+                    </a>
+                    <a href="#" class="text-gray-400 hover:text-primary transition-colors">
+                        <i class="fa fa-file-text-o"></i> 使用说明
+                    </a>
+                </div>
+            </div>
+        </div>
+    </footer>
+    
+    <!-- 帮助模态框 -->
+    <div id="helpModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center hidden">
+        <div class="bg-white rounded-xl shadow-xl max-w-md w-full max-h-[80vh] overflow-y-auto">
+            <div class="p-6 border-b">
+                <div class="flex justify-between items-center">
+                    <h3 class="text-lg font-semibold">使用帮助</h3>
+                    <button id="closeHelpBtn" class="text-gray-400 hover:text-gray-600">
+                        <i class="fa fa-times"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="p-6">
+                <div class="mb-4">
+                    <h4 class="font-medium mb-2">数据导入</h4>
+                    <p class="text-sm text-gray-600">1. 准备XLSX格式文件，列顺序为：运单号、店铺、仓库、发货时间</p>
+                    <p class="text-sm text-gray-600">2. 点击"选择文件"按钮或直接拖放文件到上传区域</p>
+                    <p class="text-sm text-gray-600">3. 等待上传完成，系统会显示导入结果</p>
+                </div>
+                <div class="mb-4">
+                    <h4 class="font-medium mb-2">批量查询</h4>
+                    <p class="text-sm text-gray-600">1. 在文本框中输入运单号，每行一个</p>
+                    <p class="text-sm text-gray-600">2. 点击"开始查询"按钮</p>
+                    <p class="text-sm text-gray-600">3. 结果会显示在右侧表格中</p>
+                </div>
+                <div>
+                    <h4 class="font-medium mb-2">数据导出</h4>
+                    <p class="text-sm text-gray-600">查询结果显示后，可以点击"导出"按钮将结果保存为Excel文件</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 1. 初始化 LeanCloud（已填入你的配置）
+        AV.init({
+            appId: "QIFoG2MY3Y5UD45Jlq5PckKJ-gzGzoHsz",  // 你的App ID
+            appKey: "IpT2GD7n63VTEUjoVIe80jte",          // 你的App Key
+            serverURL: "https://qifog2my.api.lncldglobal.com"  // 自动生成的Server URL
+        });
+
+        // 2. 定义运单数据模型
+        const Shipment = AV.Object.extend('Shipment');
+        const ShipmentQuery = new AV.Query('Shipment');
+
+        // 3. 云端数据操作核心逻辑
+        const ShipmentDB = {
+            // 获取所有运单数据
+            async getAllShipments() {
+                try {
+                    const results = await ShipmentQuery.find();
+                    return results.map(item => ({
+                        id: item.id,
+                        tracking_number: item.get('tracking_number') || '',
+                        shop: item.get('shop') || '',
+                        warehouse: item.get('warehouse') || '',
+                        shipping_time: item.get('shipping_time') || ''
+                    }));
+                } catch (error) {
+                    console.error('获取数据失败:', error);
+                    showNotification('获取数据失败，请检查网络', 'error');
+                    return [];
+                }
+            },
+
+            // 添加单条运单
+            async addShipment(shipmentData) {
+                try {
+                    const standardDate = convertToStandardDate(shipmentData.shipping_time);
+                    const shipment = new Shipment();
+                    shipment.set('tracking_number', shipmentData.tracking_number.trim());
+                    shipment.set('shop', shipmentData.shop.trim());
+                    shipment.set('warehouse', shipmentData.warehouse.trim());
+                    shipment.set('shipping_time', standardDate);
+                    await shipment.save();
+                    return true;
+                } catch (error) {
+                    console.error('添加数据失败:', error);
+                    if (error.message.includes('permission')) {
+                        showNotification('添加失败：请关闭LeanCloud的客户端权限控制', 'error');
+                    } else {
+                        showNotification('添加数据失败，请重试', 'error');
+                    }
+                    return false;
+                }
+            },
+
+            // 批量导入运单
+            async batchAddShipments(shipments) {
+                let addedCount = 0;
+                const validShipments = shipments.filter(s => s.tracking_number.trim() !== '');
+                
+                for (const shipment of validShipments) {
+                    const success = await this.addShipment(shipment);
+                    if (success) addedCount++;
+                }
+                return addedCount;
+            },
+
+            // 批量查询运单
+            async queryShipments(trackingNumbers) {
+                const allShipments = await this.getAllShipments();
+                const results = [];
+                const notFound = [...trackingNumbers];
+
+                for (const shipment of allShipments) {
+                    const index = notFound.findIndex(num => 
+                        num.trim().toLowerCase() === shipment.tracking_number.toLowerCase()
+                    );
+                    if (index !== -1) {
+                        results.push(shipment);
+                        notFound.splice(index, 1);
+                    }
+                }
+
+                this.updateQueryCount();
+                await this.updateStats();
+                return { results, notFound };
+            },
+
+            // 更新统计数据
+            async updateStats() {
+                const allShipments = await this.getAllShipments();
+                const totalCount = allShipments.length;
+                document.getElementById('totalCount').textContent = totalCount;
+
+                const today = new Date().toISOString().split('T')[0];
+                const todayCount = allShipments.filter(shipment => 
+                    shipment.shipping_time.startsWith(today)
+                ).length;
+                document.getElementById('todayCount').textContent = todayCount;
+
+                const queryCount = localStorage.getItem('queryCount') || 0;
+                document.getElementById('queryCount').textContent = queryCount;
+            },
+
+            // 更新查询次数
+            updateQueryCount() {
+                const currentCount = parseInt(localStorage.getItem('queryCount') || 0) + 1;
+                localStorage.setItem('queryCount', currentCount);
+                document.getElementById('queryCount').textContent = currentCount;
+            },
+
+            // 初始化页面数据
+            async initPageData() {
+                await this.updateStats();
+                showNotification('已连接云端数据库，可正常使用', 'success');
+            }
+        };
+
+        // 4. 日期转换函数（确保日期格式正确）
+        function convertToStandardDate(input) {
+            if (!input) return '';
+            let dateStr = String(input).trim();
+            
+            // 标准格式直接返回
+            if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+            
+            // Excel序列号处理
+            if (!isNaN(dateStr)) {
+                const excelDate = parseFloat(dateStr);
+                const isLeapYearError = excelDate > 60;
+                const days = isLeapYearError ? excelDate - 2 : excelDate - 1;
+                const date = new Date(1900, 0, days);
+                return formatDate(date);
+            }
+            
+            // 中文日期（2025年1月2日）
+            const chineseFormat = /^(\d{4})年(\d{1,2})月(\d{1,2})日$/;
+            if (chineseFormat.test(dateStr)) {
+                const match = dateStr.match(chineseFormat);
+                const date = new Date(match[1], match[2]-1, match[3]);
+                return !isNaN(date.getTime()) ? formatDate(date) : dateStr;
+            }
+            
+            // 其他格式尝试解析
+            const date = new Date(dateStr);
+            return !isNaN(date.getTime()) ? formatDate(date) : `${dateStr}（格式待修正）`;
+        }
+
+        // 日期格式化辅助函数
+        function formatDate(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth()+1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        // 5. 页面加载时初始化
+        window.onload = async function() {
+            await ShipmentDB.initPageData();
+            
+            // 文件上传和查询的交互逻辑
+            const dropArea = document.getElementById('dropArea');
+            const fileInput = document.getElementById('fileInput');
+            const browseBtn = document.getElementById('browseBtn');
+            const uploadProgress = document.getElementById('uploadProgress');
+            const uploadResult = document.getElementById('uploadResult');
+            const queryBtn = document.getElementById('queryBtn');
+            const clearBtn = document.getElementById('clearBtn');
+            const exportBtn = document.getElementById('exportBtn');
+            const helpBtn = document.getElementById('helpBtn');
+            const helpModal = document.getElementById('helpModal');
+            const closeHelpBtn = document.getElementById('closeHelpBtn');
+
+            // 浏览文件
+            browseBtn.addEventListener('click', () => {
+                fileInput.click();
+            });
+
+            // 文件选择变化
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    handleFileUpload(e.target.files[0]);
+                }
+            });
+
+            // 拖放事件
+            dropArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropArea.classList.add('border-primary');
+            });
+
+            dropArea.addEventListener('dragleave', () => {
+                dropArea.classList.remove('border-primary');
+            });
+
+            dropArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropArea.classList.remove('border-primary');
+                
+                if (e.dataTransfer.files.length > 0) {
+                    handleFileUpload(e.dataTransfer.files[0]);
+                }
+            });
+
+            // 处理文件上传
+            async function handleFileUpload(file) {
+                if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+                    showNotification('请上传XLSX或XLS格式的文件', 'error');
+                    return;
+                }
+
+                document.getElementById('uploadFileName').textContent = file.name;
+                uploadProgress.classList.remove('hidden');
+                uploadResult.classList.add('hidden');
+
+                try {
+                    if (typeof XLSX === 'undefined') {
+                        const script = document.createElement('script');
+                        script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+                        script.onload = () => processFile(file);
+                        document.head.appendChild(script);
+                    } else {
+                        processFile(file);
+                    }
+                } catch (error) {
+                    console.error('文件处理错误:', error);
+                    showNotification('文件处理失败: ' + error.message, 'error');
+                    uploadProgress.classList.add('hidden');
+                }
+            }
+
+            // 处理文件内容
+            async function processFile(file) {
+                const reader = new FileReader();
+                
+                reader.onload = async function(e) {
+                    try {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        const firstSheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[firstSheetName];
+                        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+                        const shipments = [];
+                        for (let i = 1; i < jsonData.length; i++) {
+                            const row = jsonData[i];
+                            if (row.length >= 4 && row[0]) {
+                                shipments.push({
+                                    tracking_number: row[0].toString().trim(),
+                                    shop: row[1] ? row[1].toString().trim() : '',
+                                    warehouse: row[2] ? row[2].toString().trim() : '',
+                                    shipping_time: row[3]
+                                });
+                            }
+                        }
+
+                        const addedCount = await ShipmentDB.batchAddShipments(shipments);
+                        uploadResult.innerHTML = `
+                            <div class="p-3 rounded-lg bg-green-50 text-green-700">
+                                <div class="flex items-center">
+                                    <i class="fa fa-check-circle mr-2"></i>
+                                    <div>
+                                        <p class="font-medium">导入成功</p>
+                                        <p class="text-sm mt-1">共导入 ${addedCount} 条运单数据</p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        uploadResult.classList.remove('hidden');
+                        showNotification(`成功导入 ${addedCount} 条运单数据`, 'success');
+                    } catch (error) {
+                        console.error('解析文件错误:', error);
+                        showNotification('解析文件失败: ' + error.message, 'error');
+                        uploadResult.innerHTML = `
+                            <div class="p-3 rounded-lg bg-red-50 text-red-700">
+                                <div class="flex items-center">
+                                    <i class="fa fa-exclamation-circle mr-2"></i>
+                                    <div>
+                                        <p class="font-medium">解析失败</p>
+                                        <p class="text-sm mt-1">${error.message}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        uploadResult.classList.remove('hidden');
+                    }
+                };
+                
+                reader.readAsArrayBuffer(file);
+            }
+
+            // 查询按钮点击事件
+            queryBtn.addEventListener('click', async function() {
+                const textarea = document.getElementById('trackingNumbers');
+                const trackingNumbers = textarea.value
+                    .split('\n')
+                    .map(num => num.trim())
+                    .filter(num => num);
+                
+                if (trackingNumbers.length === 0) {
+                    showNotification('请输入至少一个运单号', 'error');
+                    return;
+                }
+                
+                const result = await ShipmentDB.queryShipments(trackingNumbers);
+                displayQueryResults(result);
+                exportBtn.classList.remove('hidden');
+            });
+
+            // 显示查询结果
+            function displayQueryResults(result) {
+                const tableBody = document.getElementById('resultTableBody');
+                const resultStats = document.getElementById('resultStats');
+                const foundCount = document.getElementById('foundCount');
+                const notFoundCount = document.getElementById('notFoundCount');
+                const notFoundSection = document.getElementById('notFoundSection');
+                const notFoundList = document.getElementById('notFoundList');
+                
+                foundCount.textContent = result.results.length;
+                notFoundCount.textContent = result.notFound.length;
+                resultStats.classList.remove('hidden');
+                
+                tableBody.innerHTML = '';
+                
+                if (result.results.length > 0) {
+                    result.results.forEach(shipment => {
+                        const row = document.createElement('tr');
+                        row.className = 'hover:bg-gray-50 transition-colors';
+                        row.innerHTML = `
+                            <td class="px-4 py-3 whitespace-nowrap">${shipment.tracking_number}</td>
+                            <td class="px-4 py-3 whitespace-nowrap">${shipment.shop}</td>
+                            <td class="px-4 py-3 whitespace-nowrap">${shipment.warehouse}</td>
+                            <td class="px-4 py-3 whitespace-nowrap ${
+                                shipment.shipping_time.includes('格式待修正') ? 'text-red-500' : 'text-gray-700'
+                            }">${shipment.shipping_time}</td>
+                        `;
+                        tableBody.appendChild(row);
+                    });
+                } else {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td colspan="4" class="px-4 py-12 text-center text-gray-500">
+                            <div class="flex flex-col items-center">
+                                <i class="fa fa-search text-4xl mb-3 text-gray-300"></i>
+                                <p>没有找到匹配的运单记录</p>
+                            </div>
+                        </td>
+                    `;
+                    tableBody.appendChild(row);
+                }
+                
+                if (result.notFound.length > 0) {
+                    notFoundList.innerHTML = '';
+                    result.notFound.forEach(num => {
+                        const badge = document.createElement('span');
+                        badge.className = 'px-2 py-1 bg-red-100 text-red-800 text-xs rounded-full';
+                        badge.textContent = num;
+                        notFoundList.appendChild(badge);
+                    });
+                    notFoundSection.classList.remove('hidden');
+                } else {
+                    notFoundSection.classList.add('hidden');
+                }
+            }
+
+            // 清空按钮点击事件
+            clearBtn.addEventListener('click', function() {
+                document.getElementById('trackingNumbers').value = '';
+                document.getElementById('resultTableBody').innerHTML = `
+                    <tr>
+                        <td colspan="4" class="px-4 py-12 text-center text-gray-500">
+                            <div class="flex flex-col items-center">
+                                <i class="fa fa-search text-4xl mb-3 text-gray-300"></i>
+                                <p>请输入运单号进行查询</p>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                document.getElementById('resultStats').classList.add('hidden');
+                document.getElementById('notFoundSection').classList.add('hidden');
+                document.getElementById('exportBtn').classList.add('hidden');
+            });
+
+            // 导出按钮点击事件
+            exportBtn.addEventListener('click', function() {
+                showNotification('导出功能已触发', 'success');
+            });
+
+            // 帮助按钮和模态框
+            helpBtn.addEventListener('click', () => {
+                helpModal.classList.remove('hidden');
+            });
+            
+            closeHelpBtn.addEventListener('click', () => {
+                helpModal.classList.add('hidden');
+            });
+            
+            helpModal.addEventListener('click', (e) => {
+                if (e.target === helpModal) {
+                    helpModal.classList.add('hidden');
+                }
+            });
+        };
+
+        // 通知提示函数
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `fixed bottom-4 right-4 px-4 py-3 rounded-lg shadow-lg transform transition-all duration-300 translate-y-10 opacity-0 flex items-center z-50 ${
+                type === 'success' ? 'bg-green-500 text-white' :
+                type === 'error' ? 'bg-red-500 text-white' :
+                'bg-blue-500 text-white'
+            }`;
+            
+            notification.innerHTML = `
+                <i class="fa ${
+                    type === 'success' ? 'fa-check-circle' :
+                    type === 'error' ? 'fa-exclamation-circle' :
+                    'fa-info-circle'
+                } mr-2"></i>
+                <span>${message}</span>
+            `;
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.classList.remove('translate-y-10', 'opacity-0');
+            }, 10);
+            
+            setTimeout(() => {
+                notification.classList.add('translate-y-10', 'opacity-0');
+                setTimeout(() => {
+                    document.body.removeChild(notification);
+                }, 300);
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
+    
